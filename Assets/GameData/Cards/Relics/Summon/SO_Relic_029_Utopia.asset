@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: SO_Relic_029_Utopia
+  m_EditorClassIdentifier: Assembly-CSharp::RelicCardSO
+  cardId: 23029
+  cardName: "\u9065\u8FDC\u7684\u7406\u60F3\u4E61"
+  luaScriptName: 
+  cost: 7
+  magicBonus: 3
+  coinBonus: 1
+  defenseValue: 7
+  defense: 3
+  effectText: 
+  adventEffect: 
