@@ -32,10 +32,10 @@ namespace CrescentWreath.Modules
             _sakuraMochiDeck.Clear();
             _relicPool.Clear();
 
-            // 1. 填充樱花饼 (固定 ID 22003, 15张) [cite: 9]
+            // 1. 填充樱花饼
             for (int i = 0; i < 15; i++) _sakuraMochiDeck.Add(22003);
 
-            // 2. 准备异变堆 [cite: 11]
+            // 2. 准备异变堆
             if (supplyConfig != null)
             {
                 foreach (var anomaly in supplyConfig.anomalyCards)
@@ -43,7 +43,7 @@ namespace CrescentWreath.Modules
                 ShuffleList(_anomalyDeck);
             }
 
-            // 3. 准备宝具池 (按配置数量填充) [cite: 9]
+            // 3. 准备宝具池
             if (supplyConfig != null)
             {
                 foreach (var entry in supplyConfig.relicDeckEntries)
@@ -54,32 +54,19 @@ namespace CrescentWreath.Modules
                 ShuffleList(_relicPool);
             }
 
-            // 4. 初始化召唤区 (翻开6张)
-            Debug.Log("<color=orange>[Table]</color> --- 召唤区初始化 ---");
+            // =========================================================
+            // 【修改】注释掉下面的自动发牌！
+            // 把发牌的控制权交给 GameManager 的协程去逐个调用 DrawCardToSummonSlot
+            // =========================================================
+            /* Debug.Log("<color=orange>[Table]</color> --- 召唤区初始化 ---");
             for (int i = 0; i < 6; i++)
             {
-                if (_relicPool.Count > 0)
-                {
-                    int id = _relicPool[0];
-                    _relicPool.RemoveAt(0);
-                    _summonZone.Add(id);
-
-                    // [新增日志] 打印具体翻开的宝具名
-                    var card = cardDatabase.GetCardById(id);
-                    Debug.Log($"<color=orange>[Table]</color> 召唤区槽位 {i + 1}: <b>{card.cardName}</b> (ID:{id})");
-
-                    BroadcastMove(id, ZoneType.Unknown, ZoneType.SummonZone);
-                }
+                // 原有的瞬间填充逻辑已注释
             }
-
-            // 5. [新增日志] 打印当前异变堆顶
-            if (_anomalyDeck.Count > 0)
-            {
-                var topAnomaly = cardDatabase.GetCardById(_anomalyDeck[0]);
-                Debug.Log($"<color=purple>[Table]</color> 当前异变堆顶: <b>{topAnomaly.cardName}</b>");
-            }
+            */
+            
+            Debug.Log("<color=green>[Table]</color> 数据初始化完成，等待 GameManager 发牌...");
         }
-
         private void ShuffleList(List<int> list)
         {
             for (int i = 0; i < list.Count; i++)
@@ -94,7 +81,91 @@ namespace CrescentWreath.Modules
         private void BroadcastMove(int cardId, ZoneType from, ZoneType to)
         {
             var cardSO = cardDatabase.GetCardById(cardId);
-            if (cardSO != null) GameEvent.OnCardMoved?.Invoke(cardSO, from, to, -1);
+            if (cardSO != null) GameEvent.OnCardMoved?.Invoke(cardSO, from, to, -1, -1);
         }
+
+        /// <summary>
+        ///  获取某张卡在召唤区列表中的索引 (0-5)
+        /// 视觉层会调用这个来决定把卡画在哪个格子里
+        /// </summary>
+        public int GetSummonIndex(int cardId)
+        {
+            // _summonZone 是你存储当前场上卡牌ID的 List<int>
+            return _summonZone.IndexOf(cardId);
+        }
+        // =========================================================
+        // 【新增】动作指令接口 (供 GameManager 流程调用)
+        // =========================================================
+
+        /// <summary>
+        /// 从主牌库抽一张牌，填入指定的召唤区格子
+        /// </summary>
+        public void DrawCardToSummonSlot(int slotIndex)
+        {
+            // 1. 检查牌库是否有牌
+            if (_relicPool.Count == 0) return; // 对应 line 22 defined _relicPool
+
+            // 2. 数据层操作
+            int cardId = _relicPool[0];
+            _relicPool.RemoveAt(0);
+
+            // 确保列表容量足够 (防止 IndexOutOfRangeException)
+            while (_summonZone.Count <= slotIndex)
+            {
+                _summonZone.Add(0); // 对应 line 14 defined _summonZone
+            }
+            _summonZone[slotIndex] = cardId;
+
+            // 3. 广播事件 (带上 subIndex!)
+            var cardData = cardDatabase.GetCardById(cardId);
+            
+            // 注意：这里使用了 5 个参数的 Invoke。
+            // 请确保你已经修改了 GameEvent.OnCardMoved 的定义，增加了 subIndex 参数
+            GameEvent.OnCardMoved?.Invoke(cardData, ZoneType.Deck, ZoneType.SummonZone, -1, slotIndex);
+            
+            Debug.Log($"<color=orange>[Table]</color> 填充槽位 {slotIndex}: {cardData.cardName}");
+        }
+
+        /// <summary>
+        /// 获取当前异变堆顶的 ID (只看不拿，用于检查命运长夜)
+        /// </summary>
+        public int PeekTopAnomaly()
+        {
+            if (_anomalyDeck.Count == 0) return 0; // 对应 line 15 defined _anomalyDeck
+            return _anomalyDeck[0];
+        }
+
+        /// <summary>
+        /// 重新洗混异变堆
+        /// </summary>
+        public void ShuffleAnomalyDeck()
+        {
+            ShuffleList(_anomalyDeck);
+            Debug.Log("<color=purple>[Table]</color> 异变堆已重新洗牌");
+        }
+
+        /// <summary>
+        /// 正式翻开堆顶的异变卡 (移动到场上)
+        /// </summary>
+        public void RevealTopAnomaly()
+        {
+            if (_anomalyDeck.Count == 0) return;
+            
+            int cardId = _anomalyDeck[0];
+            _anomalyDeck.RemoveAt(0);
+            
+            // 这里我们假设异变翻开后也是去 Battlefield，或者是专门的 AnomalySlot
+            // 目前先复用 Battlefield，subIndex 设为 0
+            var cardData = cardDatabase.GetCardById(cardId);
+            
+            // 广播：异变堆 -> 战场(或异变区)
+            GameEvent.OnCardMoved?.Invoke(cardData, ZoneType.AnomalyDeck, ZoneType.Battlefield, -1, 0);
+            
+            Debug.Log($"<color=purple>[Table]</color> 异变发生: {cardData.cardName}");
+        }
+
+        // 获取牌堆数量 (用于视觉层决定是否显示牌背模型)
+        public int GetRelicDeckCount() => _relicPool.Count;
+        public int GetAnomalyDeckCount() => _anomalyDeck.Count;
     }
 }

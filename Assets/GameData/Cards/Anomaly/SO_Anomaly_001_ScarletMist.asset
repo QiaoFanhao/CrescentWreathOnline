@@ -9,12 +9,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 03dbc5b59fa1d814dba4f312e5a67c17, type: 3}
   m_Name: SO_Anomaly_001_ScarletMist
   m_EditorClassIdentifier: Assembly-CSharp::AnomalyCardSO
   cardId: 31001
   cardName: "\u7EA2\u96FE\u5F02\u53D8"
-  luaScriptName: Anomaly_31001
+  luaScriptName: 
   adventEffect: 
   condition: 
   reward: 

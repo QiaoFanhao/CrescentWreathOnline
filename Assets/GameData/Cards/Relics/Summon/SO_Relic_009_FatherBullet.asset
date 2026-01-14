@@ -9,7 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 203fcfc3de3e05a48b7bc30ca5ba3b45, type: 3}
   m_Name: SO_Relic_009_FatherBullet
   m_EditorClassIdentifier: Assembly-CSharp::RelicCardSO
   cardId: 23009

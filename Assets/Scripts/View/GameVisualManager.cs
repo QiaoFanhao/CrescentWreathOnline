@@ -12,6 +12,10 @@ namespace CrescentWreath.View
         public Transform cardSpawnRoot;     // 卡牌父节点 (VisualContext)
         public TurnModule turnModule;       // 获取当前回合玩家
 
+        public TableZoneModule tableModule;// 获取桌面数据模块, 用于查询召唤区状态
+
+        public CrescentWreath.Data.CardDatabaseSO cardDatabase;// 卡牌数据库
+
         // 运行时卡牌追踪字典 [关键优化]
         // Key: 简单的 GetHashCode 或 临时唯一ID (由于目前只有SO ID，我们用对象引用追踪)
         // 在正式项目中，ZoneModule 应该管理 RuntimeCard 实例而不仅是 int ID
@@ -23,112 +27,176 @@ namespace CrescentWreath.View
             GameEvent.OnCardMoved += HandleCardMove;
         }
 
+        private void Start()
+        {
+            // 游戏一运行，直接先把牌堆摆出来
+            InitializeDecks();
+        }
+
         private void OnDisable()
         {
             GameEvent.OnCardMoved -= HandleCardMove;
         }
 
-        private void HandleCardMove(BaseCardSO cardData, ZoneType fromZone, ZoneType toZone, int ownerId)
+        public void InitializeDecks()
         {
-            // 1. 获取或生成卡牌 View
-            // (简化逻辑：每次移动都视为“表现上的新生成”或“查找空闲View”，为了演示流畅性，这里直接生成)
-            // *进阶提示：未来这里应该写一个查找逻辑：如果场上已经有这张牌的View（比如从手牌出），就移动它，而不是生成新的*
+            var board = BoardView.Instance;
+            if (board == null) return;
+
+            // 1. 布置异变牌堆 (面朝下)
+            CreateFaceDownPile(board.anomalyDeckPos, "Visual_AnomalyDeck");
+
+            // 2. 布置主牌库 (面朝下)
+            CreateFaceDownPile(board.relicDeckPos, "Visual_RelicDeck");
+
+            // 3. 布置樱花饼 (面朝上，固定 ID)
+            // 请确认 22003 是樱花饼的 ID，如果不是请修改！
+            if (cardDatabase != null)
+            {
+                var sakuraData = cardDatabase.GetCardById(22003);
+                if (sakuraData != null)
+                {
+                    CreateFaceUpPile(board.sakuraMochiDeckPos, sakuraData, "Visual_SakuraMochi");
+                }
+            }
+
+            // 4. 布置 4 个玩家的牌库 (面朝下)
+            for (int i = 0; i < board.playerAreas.Length; i++)
+            {
+                CreateFaceDownPile(board.playerAreas[i].deckPos, $"Visual_Deck_P{i}");
+            }
+        }
+
+        // === 生成面朝下的牌堆（仅模型） ===
+        private void CreateFaceDownPile(Transform anchor, string name)
+        {
+            if (anchor == null) return;
+
+            GameObject pile = Instantiate(cardPrefab, cardSpawnRoot);
+            pile.name = name;
+            
+            pile.transform.position = anchor.position;
+            pile.transform.rotation = anchor.rotation;
+            pile.transform.localScale = cardPrefab.transform.localScale;
+
+            // 翻面
+            pile.transform.Rotate(180, 0, 0, Space.Self);
+            
+            // 加厚
+            pile.transform.localScale += new Vector3(0, 0, 0.05f);
+
+            // 【关键修改】不要 Destroy 碰撞体，而是禁用它！
+            Destroy(pile.GetComponent<CardView>()); // 脚本还是可以删的
+            
+            var col = pile.GetComponent<BoxCollider>();
+            if (col != null) col.enabled = false; // 只是关掉，不删，这样就不会报错了
+        }
+
+        // === 生成面朝上的牌堆（如樱花饼） ===
+        private void CreateFaceUpPile(Transform anchor, BaseCardSO data, string name)
+        {
+            if (anchor == null) return;
+
+            GameObject pile = Instantiate(cardPrefab, cardSpawnRoot);
+            pile.name = name;
+            
+            pile.transform.position = anchor.position;
+            pile.transform.rotation = anchor.rotation;
+            pile.transform.localScale = cardPrefab.transform.localScale;
+
+            CardView view = pile.GetComponent<CardView>();
+            if (view != null)
+            {
+                view.Setup(data);
+                view.enabled = false; // 禁用脚本逻辑
+            }
+            
+            // 【关键修改】同样改为禁用碰撞体
+            var col = pile.GetComponent<BoxCollider>();
+            if (col != null) col.enabled = false;
+        }
+
+        private void HandleCardMove(BaseCardSO cardData, ZoneType fromZone, ZoneType toZone, int ownerId,int subIndex)
+        {
             CardView cardView = SpawnCard(cardData);
 
-            // 2. 初始位置修正 (如果是由“无”变出来的)
+            // 1. 初始位置修正
             if (fromZone == ZoneType.Unknown || fromZone == ZoneType.Deck)
             {
-                // 从对应玩家的牌库位置发出
                 Transform startAnchor = GetZoneAnchor(ZoneType.Deck, ownerId);
                 if (startAnchor) cardView.transform.position = startAnchor.position;
             }
-            // 如果是从手牌打出，应该找到手牌区里对应的那张牌 (这里简化为瞬移到手牌区再飞)
             else if (fromZone == ZoneType.Hand)
             {
                 Transform handAnchor = GetZoneAnchor(ZoneType.Hand, ownerId);
                 if (handAnchor) cardView.transform.position = handAnchor.position;
             }
-
-            // 3. 计算目标落点
-            Transform targetAnchor = CalculateTargetPosition(toZone, ownerId);
-
-            // 4. 执行飞行动画
+            
+            // 2. 【关键】计算目标落点 (传入 cardData.cardId)
+            Transform targetAnchor = CalculateTargetPosition(toZone, ownerId, subIndex);
+            // 3. 执行飞行
             if (targetAnchor != null)
             {
-                // 加上一点随机偏移，防止完全重叠看着像一张牌
-                Vector3 offset = new Vector3(Random.Range(-0.02f, 0.02f), Random.Range(0, 0.05f), Random.Range(-0.02f, 0.02f));
-
-                // 如果是去手牌，需要特殊的扇形计算 (暂时先飞到 Pivot 中心)
-                // TODO: 下一步我们会写 UpdateHandVisuals 来排列它们
-
-                cardView.MoveTo(targetAnchor.position + offset, targetAnchor.rotation);
+                // 微小的随机偏移只给非召唤区用，召唤区要对齐
+                Vector3 offset = Vector3.zero;
+                if (toZone != ZoneType.SummonZone) 
+                {
+                    offset = new Vector3(Random.Range(-0.02f, 0.02f), Random.Range(0, 0.05f), Random.Range(-0.02f, 0.02f));
+                }
+                
+                cardView.MoveTo(targetAnchor.position, targetAnchor.rotation);
             }
         }
 
         /// <summary>
-        /// 核心逻辑：根据 区域类型 + 拥有者 + 当前回合 决定去哪里
+        /// 核心逻辑：根据 区域 + 谁的 + 卡牌ID 决定具体位置
         /// </summary>
-        private Transform CalculateTargetPosition(ZoneType zone, int ownerId)
+       private Transform CalculateTargetPosition(ZoneType zone, int ownerId, int subIndex)
         {
             var board = BoardView.Instance;
             if (board == null) return null;
 
-            // 处理公共区域
+            // === 公共区域 ===
             if (ownerId == -1)
             {
-                if (zone == ZoneType.SummonZone) return board.GetSummonSlot(Random.Range(0, 6)); // 临时随机
+                if (zone == ZoneType.SummonZone) 
+                {
+                    // 【关键修复】直接使用传进来的 subIndex
+                    // 如果逻辑层传了有效的索引 (>=0)，直接用它！
+                    if (subIndex >= 0)
+                    {
+                        return board.GetSummonSlot(subIndex);
+                    }
+                    else
+                    {
+                        // 降级方案：如果不传索引，才去查表（但这就可能导致重叠）
+                        Debug.LogWarning("召唤区移动未指定 subIndex，可能会重叠！");
+                        return board.GetSummonSlot(0); 
+                    }
+                }
                 if (zone == ZoneType.AnomalyDeck) return board.anomalyDeckPos;
             }
 
-            // 处理玩家区域
-            // 防止数组越界
+            // === 玩家区域 ===
             if (ownerId < 0 || ownerId >= board.playerAreas.Length) return null;
             var playerArea = board.playerAreas[ownerId];
 
             switch (zone)
             {
-                case ZoneType.Hand:
-                    return playerArea.handPivot;
-
-                case ZoneType.Deck:
-                    return playerArea.deckPos;
-
-                case ZoneType.Discard:
-                    return playerArea.discardPos;
-
+                case ZoneType.Hand: return playerArea.handPivot;
+                case ZoneType.Deck: return playerArea.deckPos;
+                case ZoneType.Discard: return playerArea.discardPos;
                 case ZoneType.Battlefield:
-                    // === [关键需求] FieldViewZone 映射逻辑 ===
-                    // 规则：只有“当前回合的玩家”打出的牌，才映射到中央蓝色区域 (FieldViewZone)
-                    // 其他玩家(比如响应防御)的牌，留在自己的 PlayZone
-
-                    if (ownerId == turnModule.activePlayerId)
-                    {
-                        // 假设 BoardView 里 P0 的 playZoneCenter 已经被你放置在了蓝色区域
-                        // 那么对于 P0 来说，这就是蓝色区域
-                        // 对于 P1/P2/P3，你需要确保他们的 playZoneCenter 也是指向中央蓝色区域吗？
-                        // 或者根据你的描述，蓝色区域是“公用的映射区”。
-
-                        // 如果蓝色区域是 BoardView 上的一个独立锚点：
-                        // return board.fieldViewZoneAnchor; 
-
-                        // 如果你想复用玩家自己的锚点配置：
-                        return playerArea.playZoneCenter;
-                    }
-                    else
-                    {
-                        // 非当前玩家（如防御牌），通常显示在自己面前
-                        return playerArea.playZoneCenter;
-                    }
-
-                default:
-                    return null;
+                    if (ownerId == turnModule.activePlayerId) return playerArea.playZoneCenter;
+                    else return playerArea.playZoneCenter;
+                default: return null;
             }
         }
 
         // 获取某个区域的起始锚点 (用于设置初始位置)
         private Transform GetZoneAnchor(ZoneType zone, int ownerId)
         {
-            return CalculateTargetPosition(zone, ownerId);
+            return CalculateTargetPosition(zone, ownerId, -1);
         }
 
         private CardView SpawnCard(BaseCardSO data)

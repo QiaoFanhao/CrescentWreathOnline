@@ -123,7 +123,7 @@ namespace CrescentWreath.Modules
         private void BroadcastMove(int cardId, ZoneType from, ZoneType to)
         {
             var cardSO = cardDatabase.GetCardById(cardId);
-            if (cardSO != null) GameEvent.OnCardMoved?.Invoke(cardSO, from, to, playerId);
+            if (cardSO != null) GameEvent.OnCardMoved?.Invoke(cardSO, from, to, playerId, -1);
         }
     }
 }

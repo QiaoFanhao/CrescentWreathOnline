@@ -80,7 +80,8 @@ namespace CrescentWreath.Core
         /// 广播：卡牌移动 (核心视觉逻辑)
         /// 参数：卡牌数据, 来源区域, 目标区域, 飞向哪个玩家的区域（0,1，2,3）
         /// </summary>
-        public static Action<BaseCardSO, ZoneType, ZoneType, int> OnCardMoved;
+        // 默认值 -1 表示不需要具体位置
+        public static Action<BaseCardSO, ZoneType, ZoneType, int, int> OnCardMoved;
 
         /// <summary>
         /// 广播：发生了一次确定的伤害结算 (UI飘字)
@@ -149,6 +150,8 @@ namespace CrescentWreath.Core
 
         // [交互] 请求取消放大
         public static Action Request_HideZoom;
+
+       
 
     }
 

@@ -11,6 +11,7 @@ namespace CrescentWreath.View
         public Transform[] summonSlots; 
         public Transform anomalyDeckPos;     
         public Transform sakuraMochiDeckPos; 
+        public Transform relicDeckPos;     // 召唤牌库位置
 
         [Header("玩家区域")]
         public PlayerAreaAnchors[] playerAreas;
