@@ -48,7 +48,7 @@ namespace CrescentWreath.Modules
 
             for (int i = 0; i < 3; i++) _deck.Add(21002);
             for (int i = 0; i < 7; i++) _deck.Add(21001);
-            
+
             ShuffleDeck();
             DrawCards(6); // 初始抽6张 [cite: 175]
         }
@@ -122,8 +122,34 @@ namespace CrescentWreath.Modules
 
         private void BroadcastMove(int cardId, ZoneType from, ZoneType to)
         {
-            var cardSO = cardDatabase.GetCardById(cardId);
-            if (cardSO != null) GameEvent.OnCardMoved?.Invoke(cardSO, from, to, playerId, -1);
+            // 【核心逻辑】数据隔离
+            // 只有在以下情况才发送真实的卡牌数据：
+            // 1. 这张牌属于本地玩家 (playerId == 0)
+            // 2. 这张牌进入了公开区域 (如 Battlefield 或 SummonZone)
+
+            bool isLocalPlayer = (playerId == 0);
+            bool isPublicZone = (to == ZoneType.Battlefield || to == ZoneType.SummonZone || to == ZoneType.Discard);
+
+            BaseCardSO cardData = null;
+
+            if (isLocalPlayer || isPublicZone)
+            {
+                cardData = cardDatabase.GetCardById(cardId);
+            }
+            else
+            {
+                // 对手的手牌，我们只传一个空数据，View 层据此生成“卡背”
+                cardData = null;
+            }
+
+            GameEvent.OnCardMoved?.Invoke(cardData, from, to, playerId, -1);
+        }/*  */
+
+        public int GetDeckCount(int playerId)
+        {
+            // 这里返回该玩家实际的牌库数量
+            // return playerDecks[playerId].Count; 
+            return 40; // 暂时写死测试，你需替换为真实逻辑
         }
     }
 }

@@ -22,6 +22,8 @@ namespace CrescentWreath.Modules
 
         private List<int> _relicPool = new List<int>(); // 隐藏的宝具主牌堆
 
+        public int GetSakuraCount() => _sakuraMochiDeck.Count;
+
         /// <summary>
         /// 由 GameManager 或 TurnModule 调用，初始化桌面
         /// </summary>

@@ -9,7 +9,7 @@ public abstract class BaseCardSO : ScriptableObject
 
     [Header("逻辑配置")]
     [Tooltip("填写对应的 Lua 脚本文件名（不含 .lua.txt）")]
-    public string luaScriptName; //  补全这个关键的“灵魂指针”
+    public string luaScriptName; 
 
     public string GetArtKey() => cardId.ToString();
 }

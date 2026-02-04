@@ -22,6 +22,10 @@ namespace CrescentWreath.View
         private static MaterialPropertyBlock _propBlock;
         private bool _isHovering = false;
 
+        [Header("状态追踪")]
+        public int currentOwnerId = -1;
+        public ZoneType currentZone = ZoneType.Unknown;
+
         /*private void Start()
         {
             // 如果你在编辑器里手动挂了 data，这行代码会让它在运行时点火
@@ -50,7 +54,12 @@ namespace CrescentWreath.View
             _textureHandle = Addressables.LoadAssetAsync<Texture2D>(key);
             _textureHandle.Completed += OnTextureLoaded;
         }
-
+        // 【新增】用于更新卡牌的归属状态
+        public void UpdateState(int ownerId, ZoneType zone)
+        {
+            this.currentOwnerId = ownerId;
+            this.currentZone = zone;
+        }
         private void OnTextureLoaded(AsyncOperationHandle<Texture2D> handle)
         {
             Debug.Log($"[CardView] 加载状态: {handle.Status} | Key: {cardData.cardId}");
@@ -66,35 +75,35 @@ namespace CrescentWreath.View
             }
         }
 
-       private void ApplyTexture(Texture2D texture)
-{
-    if (_propBlock == null) _propBlock = new MaterialPropertyBlock();
-    
-    if (frontRenderer != null)
-    {
-        frontRenderer.GetPropertyBlock(_propBlock);
+        private void ApplyTexture(Texture2D texture)
+        {
+            if (_propBlock == null) _propBlock = new MaterialPropertyBlock();
 
-        // 1. 自动匹配 Shader 属性名 (URP通常是 _BaseMap)
-        string propertyName = "_MainTex"; 
-        if (frontRenderer.sharedMaterial.HasProperty("_BaseMap"))
-            propertyName = "_BaseMap";
+            if (frontRenderer != null)
+            {
+                frontRenderer.GetPropertyBlock(_propBlock);
 
-        // 2. 设置贴图
-        _propBlock.SetTexture(propertyName, texture);
+                // 1. 自动匹配 Shader 属性名 (URP通常是 _BaseMap)
+                string propertyName = "_MainTex";
+                if (frontRenderer.sharedMaterial.HasProperty("_BaseMap"))
+                    propertyName = "_BaseMap";
 
-        // =========================================================
-        // 【修复】 垂直翻转 UV，矫正倒置的图片
-        // Vector4 参数含义: (Tiling X, Tiling Y, Offset X, Offset Y)
-        // (1, -1, 0, 1) 的意思是：横向不变，纵向倒过来，并把位置拉回正轨
-        // =========================================================
-       
-        _propBlock.SetVector(propertyName + "_ST", new Vector4(-1, -1, 1, 1));
+                // 2. 设置贴图
+                _propBlock.SetTexture(propertyName, texture);
 
-        frontRenderer.SetPropertyBlock(_propBlock);
-        
-        Debug.Log($"<color=yellow>[CardView]</color> 已应用贴图并修正UV翻转: {propertyName}");
-    }
-}
+                // =========================================================
+                // 【修复】 垂直翻转 UV，矫正倒置的图片
+                // Vector4 参数含义: (Tiling X, Tiling Y, Offset X, Offset Y)
+                // (1, -1, 0, 1) 的意思是：横向不变，纵向倒过来，并把位置拉回正轨
+                // =========================================================
+
+                _propBlock.SetVector(propertyName + "_ST", new Vector4(-1, -1, 1, 1));
+
+                frontRenderer.SetPropertyBlock(_propBlock);
+
+                Debug.Log($"<color=yellow>[CardView]</color> 已应用贴图并修正UV翻转: {propertyName}");
+            }
+        }
 
         private void OnDisable()
         {

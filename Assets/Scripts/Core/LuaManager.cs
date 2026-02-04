@@ -1,7 +1,7 @@
 using UnityEngine;
 using XLua;
 using System.IO;
-
+using CrescentWreath.Lua;
 public class LuaManager : MonoBehaviour
 {
     // 单例，方便全局访问
@@ -48,6 +48,50 @@ public class LuaManager : MonoBehaviour
 
         return null;
     }
+
+    public void ExecuteCardEffect(BaseCardSO cardData, int targetId, int ownerId)
+{
+    // 1. 确定分类文件夹 (根据 Character, Relic, Anomaly 分类)
+    string category = cardData is CharacterCardSO ? "Character" : 
+                     (cardData is RelicCardSO ? "Relic" : "Anomaly");
+
+    // 2. 确定脚本名称：优先使用 luaName，若为空则使用 cardId
+    string scriptName = string.IsNullOrEmpty(cardData.luaScriptName) ? 
+                        cardData.cardId.ToString() : cardData.luaScriptName;
+
+    // 3. 拼接 require 路径 (CustomLoader 会自动加上 StreamingAssets/Lua/ 前缀)
+    // 路径示例: "Cards/Relic/23030"
+    string requirePath = $"Cards/{category}/{scriptName}";
+
+    try
+    {
+        // 4. 加载 Lua 脚本并获取返回的 Table
+        // 脚本结尾必须有 return Card_XXXX，否则 scriptTable 为空
+        LuaTable scriptTable = _luaEnv.DoString($"return require('{requirePath}')")[0] as LuaTable;
+
+        if (scriptTable != null)
+        {
+            // 5. 构造 Context 对象传递给 Lua
+            // 这里假设你已经引用了场景中的 TurnModule 和 PlayerZoneModules
+            var turnModule = Object.FindFirstObjectByType<CrescentWreath.Modules.TurnModule>();
+            var context = new LuaEffectContext(ownerId, targetId, cardData, turnModule, turnModule.playerZoneModules);
+
+            // 6. 获取并执行 OnPlay 函数
+            LuaFunction onPlayFunc = scriptTable.Get<LuaFunction>("OnPlay");
+            onPlayFunc?.Call(scriptTable, context);
+            
+            // 7. 逻辑回归：Lua 执行完异能后，自动结算 SO 里的基础资源
+            if (cardData is RelicCardSO relic)
+            {
+                turnModule.AddResources(relic.coinBonus, relic.magicBonus);
+            }
+        }
+    }
+    catch (System.Exception e)
+    {
+        Debug.LogError($"[Lua] 执行脚本 {requirePath} 失败: {e.Message}");
+    }
+}
 
     public void DoString(string code)
     {

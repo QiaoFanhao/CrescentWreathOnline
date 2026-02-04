@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RelicCardSO
   cardId: 23030
   cardName: "\u8FF7\u4F60\u516B\u5366\u7089"
-  luaScriptName: 
+  luaScriptName: 23030
   cost: 7
   magicBonus: 4
   coinBonus: 0
