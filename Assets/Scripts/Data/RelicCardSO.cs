@@ -1,5 +1,5 @@
 using UnityEngine;
-
+using CrescentWreath.Data;
 // 2. 宝具卡：牌库构筑的主体
 [CreateAssetMenu(fileName = "NewRelic", menuName = "DBG/Cards/Relic")]
 public class RelicCardSO : BaseCardSO
@@ -16,4 +16,6 @@ public class RelicCardSO : BaseCardSO
     [Header("效果描述")]
     [TextArea] public string effectText;   // 使用效果
     [TextArea] public string adventEffect; // 某些宝具具备的“降临效果”
+    [Header("Targeting")]
+    public TargetType targetType = TargetType.None; // 默认为无目标
 }

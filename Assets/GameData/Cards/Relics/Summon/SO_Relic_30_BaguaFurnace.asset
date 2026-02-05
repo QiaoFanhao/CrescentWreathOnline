@@ -22,3 +22,4 @@ MonoBehaviour:
   defense: 1
   effectText: 
   adventEffect: 
+  targetType: 1

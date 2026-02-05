@@ -12,4 +12,13 @@ public abstract class BaseCardSO : ScriptableObject
     public string luaScriptName; 
 
     public string GetArtKey() => cardId.ToString();
+   
 }
+
+ public enum TargetType
+    {
+        None,           // 不需要目标 (如：赛钱箱)
+        SingleEnemy,    // 需要选择一个敌人 (如：八卦炉)
+        SingleAlly,     // 需要选择一个队友
+        AnyPlayer       // 任意玩家
+    }

@@ -25,6 +25,20 @@ namespace CrescentWreath.Lua
             this._playerZones = zones;
         }
 
+        // --- 核心方法：异步选择目标 ---
+        // --- 新增：通用选择接口 ---
+        // Lua 调用示例: context:SelectCard("Battlefield", 1, "NonHuman") -> 选对手场上的非人类
+        public WaitForSelection AsyncSelect(string zone, int scope)
+        {
+            // 返回指令对象，让 Lua 去 yield
+            return new WaitForSelection(zone, scope);
+        }
+
+        // 也可以加一个带 Filter 的重载
+        public WaitForSelection AsyncSelect(string zone, int scope, string filter)
+        {
+            return new WaitForSelection(zone, scope, filter);
+        }
         // --- 以下是暴露给 Lua 的“原子操作” ---
 
         // 增加技能点：直接调用你刚刚修改过的 TurnModule 接口
@@ -48,9 +62,15 @@ namespace CrescentWreath.Lua
         }
 
         // 造成伤害 (预留接口)
-        public void DealDamage(int targetPlayerId, int amount)
+        public void DealDamage(int targetId, int amount)
         {
-            UnityEngine.Debug.Log($"[Lua指令] 对玩家 {targetPlayerId} 造成 {amount} 点伤害");
+            UnityEngine.Debug.Log($"[Lua执行] 对目标 {targetId} 造成 {amount} 点伤害！");
+        }
+
+        // Lua 调用此方法，C# 返回一个指令，Lua 再 yield 出去
+        public WaitForDamageProcess ApplyDamage(int targetId, int amount, string type)
+        {
+            return new WaitForDamageProcess(targetId, amount, type);
         }
     }
 }

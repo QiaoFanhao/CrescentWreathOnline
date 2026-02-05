@@ -8,7 +8,7 @@ using UnityEngine.ResourceManagement.AsyncOperations;
 namespace CrescentWreath.View
 {
     [RequireComponent(typeof(Canvas), typeof(GraphicRaycaster))]
-    public class UICardView : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    public class UICardView : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
     {
         [Header("UI 组件引用")]
         public RawImage artImage;
@@ -21,12 +21,12 @@ namespace CrescentWreath.View
         // 运行时数据
         public BaseCardSO _cardData;
         private AsyncOperationHandle<Texture2D> _textureHandle;
-        
+
         // 布局与渲染控制
         private RectTransform _rectTransform;
         private Canvas _canvas; // 用于控制渲染层级
         private bool _isHovering = false;
-        
+
         // 外部（LayoutManager）计算出的目标状态
         public Vector2 LayoutPosition { get; set; }
         public Quaternion LayoutRotation { get; set; }
@@ -35,11 +35,11 @@ namespace CrescentWreath.View
         {
             _rectTransform = GetComponent<RectTransform>();
             _canvas = GetComponent<Canvas>();
-            
+
             // 确保初始状态不覆盖层级，完全听从父Canvas
             if (_canvas != null)
             {
-                _canvas.overrideSorting = false; 
+                _canvas.overrideSorting = false;
             }
         }
 
@@ -77,7 +77,7 @@ namespace CrescentWreath.View
         private void Update()
         {
             // --- 核心动画状态机 ---
-            
+
             Vector2 finalPos;
             Quaternion finalRot;
             Vector3 finalScale;
@@ -89,7 +89,7 @@ namespace CrescentWreath.View
                 // 旋转：归零 (变正)
                 // 缩放：放大
                 finalPos = LayoutPosition + new Vector2(0, hoverYOffset);
-                finalRot = Quaternion.identity; 
+                finalRot = Quaternion.identity;
                 finalScale = Vector3.one * hoverScale;
             }
             else
@@ -119,7 +119,7 @@ namespace CrescentWreath.View
             if (_canvas != null)
             {
                 _canvas.overrideSorting = true;
-                _canvas.sortingOrder = 100; 
+                _canvas.sortingOrder = 100;
             }
         }
 
@@ -134,5 +134,17 @@ namespace CrescentWreath.View
                 _canvas.sortingOrder = 0;
             }
         }
+        // UICardView.cs
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (eventData.dragging) return;
+            if (_cardData == null) return;
+
+            Debug.Log($"<color=orange>[Input]</color> 点击卡牌: {_cardData.cardId}");
+
+            // 直接启动！不需要这里处理取标了，全部交给 Lua 内部去 yield
+            LuaManager.Instance.ExecuteCardEffect(_cardData, 0); // 假设 owner=0
+        }
+
     }
 }
