@@ -18,7 +18,7 @@ function Card_23030:OnPlay(context)
         -- 3. 拿到结果
         if finalDmg > 0 then
             print("[Lua] 攻击生效！最终造成了 " .. finalDmg .. " 点伤害！(对方真硬)")
-            context:FinalizeDamage(targetId, finalDmg) -- 如果你需要 Lua 来执行最后一步
+            context:ApplyDamage(targetId, finalDmg) -- 如果你需要 Lua 来执行最后一步
         else
             print("[Lua] 攻击被完全防御了！")
         end

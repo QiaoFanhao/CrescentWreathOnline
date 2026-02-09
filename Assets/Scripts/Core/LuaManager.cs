@@ -149,51 +149,39 @@ public class LuaManager : MonoBehaviour
     // LuaManager.cs 中的 HandleYieldInstruction 方法
     private void HandleYieldInstruction(LuaYieldInstruction instruction, System.Action<object> onComplete)
     {
-        // 1. 获取传入对象的真实身份
-        string incomingType = instruction.GetType().FullName;
-        // 2. 获取 LuaManager 认为的身份
-        string expectedType = typeof(CrescentWreath.Core.WaitForDamageProcess).FullName;
+        // 调试日志（确认运行正常后可注释掉）
+        // Debug.Log($"[LuaManager] 收到指令: {instruction.GetType().Name}");
 
-        Debug.Log($"[Debug] 收到指令对象: {incomingType} | 期望匹配类型: {expectedType}");
-        if (instruction is WaitForSelection request)
+        // 1. 处理【选择】请求
+        if (instruction is WaitForSelection selectRequest)
         {
             Debug.Log("[LuaManager] 正在处理 WaitForSelection...");
-            // 根据 Zone 的类型，决定启用哪种选择器
-            if (request.Zone == "Player")
+
+            if (selectRequest.Zone == "Player")
             {
-                // 选玩家头像 (3D)
                 TargetSelectionManager.Instance.StartPlayerSelection(
-                    request.Scope,
-                    (id) => onComplete(id) // 把 int 传给 object 委托，这是安全的
+                    selectRequest.Scope,
+                    (id) => onComplete(id)
                 );
             }
-            // === 新增：处理伤害请求 ===
-            else if (instruction is WaitForDamageProcess dmgRequest)
+            else if (selectRequest.Zone == "Battlefield" || selectRequest.Zone == "Hand")
             {
-                Debug.Log($"[LuaManager] 匹配成功！正在处理伤害... 目标:{dmgRequest.TargetId}");
-                StartCoroutine(MockDefenseSequence(dmgRequest, onComplete));
-            }
-            else if (request.Zone == "Battlefield" || request.Zone == "Hand")
-            {
-                // 选卡牌 (UI 或 3D 卡牌模型)
-                // 你需要一个 CardSelectionManager 来处理高亮和点击卡牌
-                // CardSelectionManager.Instance.StartCardSelection(request.Zone, request.Scope, request.FilterTag, onComplete);
-
-                Debug.Log($"[Mock] 系统正在等待玩家在 {request.Zone} 选择一张 {request.FilterTag} 卡牌...");
-
-                // --- 模拟测试代码 (因为还没有做选卡 UI) ---
-                // 假设 2 秒后玩家选中了 ID 为 999 的卡
+                Debug.Log($"[Mock] 等待玩家在 {selectRequest.Zone} 选择卡牌...");
                 StartCoroutine(MockSelectionDelay(onComplete));
             }
-            // 4. 【兜底报错】如果收到了不认识的指令
-            else
-            {
-                Debug.LogError($"[LuaManager] 类型匹配失败！\n传入的是: {incomingType}\nLuaManager 引用的是: {instruction.GetType().Namespace} 下的定义。\n请检查是否在不同文件中定义了同名类！");
-            }
         }
-
+        // 2. 处理【伤害】请求 (注意：这句必须在上面的大括号外面！)
+        else if (instruction is WaitForDamageProcess dmgRequest)
+        {
+            Debug.Log($"[LuaManager] 匹配成功！正在处理伤害... 目标:{dmgRequest.TargetId}");
+            StartCoroutine(MockDefenseSequence(dmgRequest, onComplete));
+        }
+        // 3. 兜底报错
+        else
+        {
+            Debug.LogError($"[LuaManager] 未知指令类型: {instruction.GetType().FullName}");
+        }
     }
-
     private IEnumerator MockSelectionDelay(System.Action<object> onComplete)
     {
         yield return new WaitForSeconds(2.0f); // 模拟思考
