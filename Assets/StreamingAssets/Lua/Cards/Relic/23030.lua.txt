@@ -3,27 +3,23 @@ local Card_23030 = CardBase.New(23030)
 
 function Card_23030:OnPlay(context)
     context:AddSkillPoint(1)
-    print("[Lua] 技能点+1，准备寻找目标...")
+    print("[Lua] +1 skill point, selecting enemy target...")
 
-    -- 1. 选人
-    local targetId = coroutine.yield(context:AsyncSelect("Player", 1))
+    local targetId = coroutine.yield(context:SelectPlayer(1))
 
     if targetId ~= -1 then
-        print("[Lua] 选中目标 " .. targetId .. "，发起 3 点魔法伤害申请...")
-        
-        -- 2. 发起伤害并在 C# 跑完防御流程前挂起
-        -- yield 返回的值就是 C# 算出来的 finalDamage
+        print("[Lua] Target selected " .. targetId .. ", requesting 3 Magic damage...")
+
         local finalDmg = coroutine.yield(context:ApplyDamage(targetId, 3, "Magic"))
-        
-        -- 3. 拿到结果
+
         if finalDmg > 0 then
-            print("[Lua] 攻击生效！最终造成了 " .. finalDmg .. " 点伤害！(对方真硬)")
-            context:ApplyDamage(targetId, finalDmg) -- 如果你需要 Lua 来执行最后一步
+            print("[Lua] Final damage dealt: " .. finalDmg)
+            context:DealDamage(targetId, finalDmg, "Magic")
         else
-            print("[Lua] 攻击被完全防御了！")
+            print("[Lua] Attack was fully blocked")
         end
     else
-        print("[Lua] 取消选择")
+        print("[Lua] Target selection canceled")
     end
 end
 

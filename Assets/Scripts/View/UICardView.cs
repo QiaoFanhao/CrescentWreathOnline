@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using CrescentWreath.Data;
+using CrescentWreath.Core;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 
@@ -143,7 +144,8 @@ namespace CrescentWreath.View
             Debug.Log($"<color=orange>[Input]</color> 点击卡牌: {_cardData.cardId}");
 
             // 直接启动！不需要这里处理取标了，全部交给 Lua 内部去 yield
-            LuaManager.Instance.ExecuteCardEffect(_cardData, 0); // 假设 owner=0
+            int handIndex = transform.GetSiblingIndex();
+            GameEvent.Request_PlayHandCard?.Invoke(handIndex);
         }
 
     }

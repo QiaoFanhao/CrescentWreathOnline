@@ -1,76 +1,176 @@
 using CrescentWreath.Core;
 using CrescentWreath.Modules;
+using UnityEngine;
 
 namespace CrescentWreath.Lua
 {
     /// <summary>
-    /// 这是真正传给 Lua 的对象。
-    /// Lua 脚本通过 context:AddSkillPoint(1) 这种方式来调用 C#。
+    /// Object passed into Lua card scripts.
+    /// Exposes a stable gameplay API surface for card effects.
     /// </summary>
     public class LuaEffectContext
     {
-        public int ownerId;      // 谁发动的效果
-        public int targetId;     // 玩家选中的目标 ID
-        public BaseCardSO card;  // 正在结算的卡牌数据
+        public int ownerId;
+        public int targetId;
+        public BaseCardSO card;
 
-        private TurnModule _turn;
-        private PlayerZoneModule[] _playerZones;
+        private readonly TurnModule _turn;
+        private readonly PlayerZoneModule[] _playerZones;
 
         public LuaEffectContext(int owner, int target, BaseCardSO data, TurnModule turn, PlayerZoneModule[] zones)
         {
-            this.ownerId = owner;
-            this.targetId = target;
-            this.card = data;
-            this._turn = turn;
-            this._playerZones = zones;
+            ownerId = owner;
+            targetId = target;
+            card = data;
+            _turn = turn;
+            _playerZones = zones;
         }
 
-        // --- 核心方法：异步选择目标 ---
-        // --- 新增：通用选择接口 ---
-        // Lua 调用示例: context:SelectCard("Battlefield", 1, "NonHuman") -> 选对手场上的非人类
-        public WaitForSelection AsyncSelect(string zone, int scope)
+        // ---------------------------------------------------------------------
+        // Selection API (preferred)
+        // ---------------------------------------------------------------------
+
+        // scope: 0=self, 1=enemy, 2=all
+        public WaitForSelection SelectPlayer(int scope)
         {
-            // 返回指令对象，让 Lua 去 yield
+            return new WaitForSelection("Player", scope);
+        }
+
+        public WaitForSelection SelectPlayer(int scope, string filterTag)
+        {
+            return new WaitForSelection("Player", scope, filterTag);
+        }
+
+        public WaitForSelection SelectCard(string zone, int scope)
+        {
             return new WaitForSelection(zone, scope);
         }
 
-        // 也可以加一个带 Filter 的重载
-        public WaitForSelection AsyncSelect(string zone, int scope, string filter)
+        public WaitForSelection SelectCard(string zone, int scope, string filterTag)
         {
-            return new WaitForSelection(zone, scope, filter);
+            return new WaitForSelection(zone, scope, filterTag);
         }
-        // --- 以下是暴露给 Lua 的“原子操作” ---
 
-        // 增加技能点：直接调用你刚刚修改过的 TurnModule 接口
+        public WaitForSelection SelectCard(string zone, int scope, string filterTag, int count)
+        {
+            return new WaitForSelection(zone, scope, filterTag, count);
+        }
+
+        // ---------------------------------------------------------------------
+        // Compatibility wrappers (keep old scripts working)
+        // ---------------------------------------------------------------------
+
+        public WaitForSelection AsyncSelect(string zone, int scope)
+        {
+            return SelectCard(zone, scope);
+        }
+
+        public WaitForSelection AsyncSelect(string zone, int scope, string filterTag)
+        {
+            return SelectCard(zone, scope, filterTag);
+        }
+
+        // ---------------------------------------------------------------------
+        // Resource / card actions
+        // ---------------------------------------------------------------------
+
         public void AddSkillPoint(int amount)
         {
             if (_turn != null) _turn.AddResources(0, 0, amount);
         }
 
-        public void MoveCard(int cardId, ZoneType from, ZoneType to, int ownerId)
+        public void AddCoin(int amount)
         {
-            // 调用逻辑层真正的移动处理
-            // 比如：_playerZones[ownerId].ExecuteMove(cardId, from, to);
-            UnityEngine.Debug.Log($"[Lua指令] 移动卡牌 {cardId}: {from} -> {to}");
+            if (_turn != null) _turn.AddResources(amount, 0, 0);
         }
 
-        // 抽牌逻辑
+        public void AddMagic(int amount)
+        {
+            if (_turn != null) _turn.AddResources(0, amount, 0);
+        }
+
         public void DrawCards(int playerId, int amount)
         {
-            if (playerId >= 0 && playerId < _playerZones.Length)
-                _playerZones[playerId].DrawCards(amount);
+            if (_playerZones == null) return;
+            if (playerId < 0 || playerId >= _playerZones.Length) return;
+            if (_playerZones[playerId] == null) return;
+
+            _playerZones[playerId].DrawCards(amount);
         }
 
-        // 造成伤害 (预留接口)
+        public void MoveCard(int cardId, ZoneType from, ZoneType to, int ownerId)
+        {
+            Debug.Log($"[Lua] MoveCard request card={cardId} {from}->{to} owner={ownerId}");
+            // TODO: Route into actual runtime card movement pipeline.
+        }
+
+        // String overload for Lua convenience / compatibility.
+        public void MoveCard(int cardId, string fromZone, string toZone, int ownerId)
+        {
+            if (!TryParseZone(fromZone, out var from) || !TryParseZone(toZone, out var to))
+            {
+                Debug.LogWarning($"[Lua] MoveCard invalid zone(s): {fromZone} -> {toZone}");
+                return;
+            }
+
+            MoveCard(cardId, from, to, ownerId);
+        }
+
+        // ---------------------------------------------------------------------
+        // Damage API
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Immediate damage/heal application placeholder (non-yield path).
+        /// Positive values = damage, negative values = heal.
+        /// </summary>
         public void DealDamage(int targetId, int amount)
         {
-            UnityEngine.Debug.Log($"[Lua执行] 对目标 {targetId} 造成 {amount} 点伤害！");
+            DealDamage(targetId, amount, "Direct");
         }
 
-        // Lua 调用此方法，C# 返回一个指令，Lua 再 yield 出去
-        public WaitForDamageProcess ApplyDamage(int targetId, int amount, string type)
+        public void DealDamage(int targetId, int amount, string type)
         {
+            if (amount >= 0)
+                Debug.Log($"[Lua] DealDamage target={targetId} amount={amount} type={type}");
+            else
+                Debug.Log($"[Lua] Heal target={targetId} amount={-amount} type={type}");
+
+            // TODO: Connect to real HP / damage resolution pipeline.
+        }
+
+        /// <summary>
+        /// Request asynchronous damage processing (defense/reaction window).
+        /// For non-positive values, this applies immediately and returns null for compatibility.
+        /// Lua usage:
+        ///   local id = coroutine.yield(context:SelectPlayer(1))
+        ///   local final = coroutine.yield(context:ApplyDamage(id, 3, "Magic"))
+        /// </summary>
+        public object ApplyDamage(int targetId, int amount)
+        {
+            return ApplyDamage(targetId, amount, "Direct");
+        }
+
+        public object ApplyDamage(int targetId, int amount, string type)
+        {
+            if (amount <= 0)
+            {
+                DealDamage(targetId, amount, type);
+                return null;
+            }
+
             return new WaitForDamageProcess(targetId, amount, type);
+        }
+
+        private bool TryParseZone(string zoneName, out ZoneType zone)
+        {
+            if (string.IsNullOrEmpty(zoneName))
+            {
+                zone = ZoneType.Unknown;
+                return false;
+            }
+
+            return System.Enum.TryParse(zoneName, true, out zone);
         }
     }
 }

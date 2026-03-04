@@ -1,0 +1,23 @@
+local Card_23031 = {}
+
+function Card_23031:OnPlay(context)
+    print("[Lua] YinYangJade effect start")
+
+    print("[Lua] Select a player to heal...")
+    local allyId = coroutine.yield(context:SelectPlayer(2, "Human"))
+
+    if allyId ~= -1 then
+        context:DealDamage(allyId, -2, "Magic")
+        print("[Lua] Healed target " .. allyId .. " for 2")
+    end
+
+    print("[Lua] Select an enemy target to damage...")
+    local enemyId = coroutine.yield(context:SelectPlayer(1, "NonHuman"))
+
+    if enemyId ~= -1 then
+        local dmg = coroutine.yield(context:ApplyDamage(enemyId, 1, "Direct"))
+        print("[Lua] Final damage dealt: " .. tostring(dmg))
+    end
+end
+
+return Card_23031

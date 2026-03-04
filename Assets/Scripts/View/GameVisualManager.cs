@@ -193,14 +193,37 @@ namespace CrescentWreath.View
                 }
 
                 // 2. 生成真正的 3D 实体
+                if (toZone == ZoneType.Battlefield && ownerId == 0)
+                {
+                    return;
+                }
+
+                if (cardData == null)
+                {
+                    Debug.LogWarning($"[Visual] Skip spawn because cardData is null: {fromZone} -> {toZone}, owner={ownerId}");
+                    return;
+                }
+
                 CardView cardView = SpawnCard(cardData);
+                if (cardView == null) return;
                 cardView.UpdateState(ownerId, toZone);
 
                 // 3. 计算位置并飞行
-                Transform targetAnchor = CalculateTargetPosition(toZone, ownerId, subIndex);
-                if (targetAnchor != null)
+                if (toZone == ZoneType.Battlefield && ownerId >= 0)
                 {
-                    cardView.MoveTo(targetAnchor.position, targetAnchor.rotation);
+                    RelayoutBattlefield(ownerId);
+                }
+                else
+                {
+                    Transform targetAnchor = CalculateTargetPosition(toZone, ownerId, subIndex);
+                    if (targetAnchor != null)
+                    {
+                        cardView.MoveTo(targetAnchor.position, targetAnchor.rotation);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[Visual] Missing target anchor for move {fromZone}->{toZone}, owner={ownerId}, subIndex={subIndex}");
+                    }
                 }
             }
         }
@@ -290,6 +313,43 @@ namespace CrescentWreath.View
         /// <summary>
         /// 应用扇形排版 (修复版：使用 TransformPoint 实现本地坐标转世界坐标)
         /// </summary>
+        private void RelayoutBattlefield(int playerId)
+        {
+            var board = BoardView.Instance;
+            if (board == null || playerId < 0 || playerId >= board.playerAreas.Length) return;
+
+            var playerArea = board.playerAreas[playerId];
+            Transform battlefieldAnchor = playerArea.playZoneCenter != null ? playerArea.playZoneCenter : playerArea.deckPos;
+            if (battlefieldAnchor == null)
+            {
+                Debug.LogWarning($"[Visual] Player {playerId} battlefield anchor is missing (playZoneCenter/deckPos).");
+                return;
+            }
+            if (playerArea.playZoneCenter == null)
+            {
+                Debug.LogWarning($"[Visual] Player {playerId} playZoneCenter is missing. Using deckPos as fallback.");
+            }
+
+            List<CardView> battlefieldCards = _activeViews
+                .Where(v => v != null && v.currentOwnerId == playerId && v.currentZone == ZoneType.Battlefield)
+                .ToList();
+
+            int count = battlefieldCards.Count;
+            if (count == 0) return;
+
+            float spacing = 0.45f;
+            float startOffset = -0.5f * (count - 1) * spacing;
+
+            for (int i = 0; i < count; i++)
+            {
+                CardView card = battlefieldCards[i];
+                Vector3 localOffset = new Vector3(startOffset + i * spacing, 0f, i * 0.01f);
+                Vector3 targetPos = battlefieldAnchor.TransformPoint(localOffset);
+                Quaternion targetRot = battlefieldAnchor.rotation;
+                card.MoveTo(targetPos, targetRot, 0.25f);
+            }
+        }
+
         private void ApplyFanLayout(List<CardView> cards, Transform pivot, float angleStep, float startAngle)
         {
             for (int i = 0; i < cards.Count; i++)
@@ -349,6 +409,7 @@ namespace CrescentWreath.View
                     }
                 }
                 if (zone == ZoneType.AnomalyDeck) return board.anomalyDeckPos;
+                if (zone == ZoneType.Battlefield) return board.anomalyDeckPos;
             }
 
             // === 玩家区域 ===
@@ -361,8 +422,7 @@ namespace CrescentWreath.View
                 case ZoneType.Deck: return playerArea.deckPos;
                 case ZoneType.Discard: return playerArea.discardPos;
                 case ZoneType.Battlefield:
-                    if (ownerId == turnModule.activePlayerId) return playerArea.playZoneCenter;
-                    else return playerArea.playZoneCenter;
+                    return playerArea.playZoneCenter;
                 default: return null;
             }
         }
@@ -375,6 +435,12 @@ namespace CrescentWreath.View
 
         private CardView SpawnCard(BaseCardSO data)
         {
+            if (data == null)
+            {
+                Debug.LogWarning("[Visual] SpawnCard called with null data.");
+                return null;
+            }
+
             // 1. 实例化 (挂在父节点下)
             GameObject go = Instantiate(cardPrefab, cardSpawnRoot);
 
@@ -389,6 +455,12 @@ namespace CrescentWreath.View
 
             // 3. 初始化数据
             CardView view = go.GetComponent<CardView>();
+            if (view == null)
+            {
+                Debug.LogError("[Visual] cardPrefab missing CardView component.");
+                Destroy(go);
+                return null;
+            }
             view.Setup(data);
 
             _activeViews.Add(view);

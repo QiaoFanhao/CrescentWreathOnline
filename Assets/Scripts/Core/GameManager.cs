@@ -1,115 +1,108 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections;
-using CrescentWreath.Modules; // 引用模块
-using CrescentWreath.View;    // 引用视觉
+using CrescentWreath.Modules;
+using CrescentWreath.View;
 
 namespace CrescentWreath.Core
 {
     /// <summary>
-    /// 游戏流程总导演
-    /// 职责：控制游戏启动顺序、回合流转、阶段切换。
-    /// 它不持有数据，它只负责调用 Modules 的能力。
+    /// High-level startup director. Responsible for opening sequence and handing control to TurnModule.
+    /// Does not own gameplay state itself; it orchestrates other modules.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
-        [Header("--- 核心模块连接 ---")]
-        [Tooltip("负责桌面的数据（召唤区、异变、樱花饼）")]
+        [Header("--- Core Module References ---")]
+        [Tooltip("Owns shared table data (summon zone, anomaly deck, sakura mochi deck, etc.)")]
         public TableZoneModule tableModule;
-        
-        [Tooltip("负责视觉表现（生成模型、飞卡牌）")]
+
+        [Tooltip("Owns visual presentation (deck meshes, flying cards, etc.)")]
         public GameVisualManager visualManager;
-        
-        [Tooltip("负责回合逻辑")]
+
+        [Tooltip("Owns turn/phase progression only")]
         public TurnModule turnModule;
-        
-        // 如果有 PlayerZoneModule 也在这里引用
-        // public PlayerZoneModule playerModule;
 
         private void Start()
         {
-            // 游戏启动，大幕拉开
             StartCoroutine(GameStartFlow());
         }
 
         /// <summary>
-        /// 【剧本】游戏启动流程
-        /// 这里定义了发生的一切事情的顺序和节奏
+        /// Opening sequence / cinematic bootstrap.
         /// </summary>
         private IEnumerator GameStartFlow()
         {
-            Debug.Log("<color=yellow>🎬 [Director] 游戏启动流程开始...</color>");
+            Debug.Log("<color=yellow>[Director] Game startup flow begins...</color>");
 
-            // =============================================================
-            // 第一幕：数据的创生
-            // =============================================================
-            // 必须最先执行！先把 List 填满，把牌库洗好。
-            // 只有数据准备好了，视觉层才能知道要在哪里生成多厚的牌堆。
+            if (tableModule == null)
+            {
+                Debug.LogError("[Director] TableZoneModule reference is missing.");
+                yield break;
+            }
+
+            // Act 1: build shared table data.
             tableModule.InitializeTable();
-            // playerModule.Initialize(); 
-            
-            Debug.Log($"[Director] 数据层构建完毕。主牌库剩余: {tableModule.GetRelicDeckCount()} 张");
+            Debug.Log($"[Director] Table data initialized. Relic pool remaining: {tableModule.GetRelicDeckCount()}");
 
-            // =============================================================
-            // 第二幕：舞台的搭建
-            // =============================================================
-            // 现在数据有了，让 VisualManager 进场，根据数据在桌上摆放静止的牌堆模型
-            visualManager.InitializeDecks();
-            
-            Debug.Log("[Director] 视觉舞台搭建完毕。");
-            yield return new WaitForSeconds(0.5f); // 稍微停顿，展示一下空旷的桌面
+            // Act 2: build static table visuals.
+            if (visualManager != null)
+            {
+                visualManager.InitializeDecks();
+                Debug.Log("[Director] Visual stage initialized.");
+            }
+            else
+            {
+                Debug.LogWarning("[Director] GameVisualManager reference is missing; skipping visual setup.");
+            }
 
-            // =============================================================
-            // 第三幕：召唤仪式 (从牌库发 6 张牌到中间)
-            // =============================================================
-            Debug.Log("[Director] 开始填充召唤区...");
-            
+            yield return new WaitForSeconds(0.5f);
+
+            // Act 3: fill summon zone with a paced animation.
+            Debug.Log("[Director] Filling summon zone...");
             for (int i = 0; i < 6; i++)
             {
-                // 指挥 TableModule：从牌堆顶抽一张，放到第 i 个格子里
-                // TableModule 会修改数据，并广播事件，让 VisualManager 生成飞行动画
                 tableModule.DrawCardToSummonSlot(i);
-                
-                // 节奏控制：每 0.15 秒发一张，制造“刷、刷、刷”的节奏感
                 yield return new WaitForSeconds(0.15f);
             }
-            
-            yield return new WaitForSeconds(0.8f); // 等待所有卡牌飞到位
 
-            // =============================================================
-            // 第四幕：异变的降临
-            // =============================================================
-            Debug.Log("[Director] 揭示首个异变...");
-            
-            // 翻开第一张异变卡
-            // 同样，这会触发广播，让异变卡从红色区域翻开飞出来
+            yield return new WaitForSeconds(0.8f);
+
+            // Act 4: reveal the first anomaly.
+            Debug.Log("[Director] Revealing first anomaly...");
             tableModule.RevealTopAnomaly();
-            
+
             yield return new WaitForSeconds(1.0f);
 
-            // =============================================================
-            // 第五幕：玩家入场
-            // =============================================================
-            Debug.Log("[Director] 玩家抽取初始手牌...");
-            
-            // 假设我们要给 Player 0 (你自己) 发 5 张牌
-            // 这里的代码需要你的 PlayerZoneModule 支持，暂时用注释表示
-            /*
-            for (int i = 0; i < 5; i++)
-            {
-                playerModule.DrawCard(0); // 玩家0抽牌
-                yield return new WaitForSeconds(0.1f);
-            }
-            */
+            // Act 5: initialize player decks / opening hands.
+            Debug.Log("[Director] Initializing player decks and opening hands...");
+            InitializePlayersForMatch();
+            yield return new WaitForSeconds(0.3f);
 
-            // =============================================================
-            // 终幕：游戏正式开始
-            // =============================================================
-            Debug.Log("<color=cyan>✨ [Director] 所有准备工作就绪，游戏开始！</color>");
-            
-            // 转交控制权给 TurnModule，开始第一回合
+            // Final: hand control to turn system.
+            Debug.Log("<color=cyan>[Director] Setup complete. Starting gameplay.</color>");
             if (turnModule != null)
             {
                 turnModule.StartGame();
+            }
+            else
+            {
+                Debug.LogError("[Director] TurnModule reference is missing.");
+            }
+        }
+
+        /// <summary>
+        /// Single entry point for player-zone match setup.
+        /// TurnModule should not initialize table/player data.
+        /// </summary>
+        private void InitializePlayersForMatch()
+        {
+            if (turnModule == null || turnModule.playerZoneModules == null) return;
+
+            foreach (var playerZone in turnModule.playerZoneModules)
+            {
+                if (playerZone != null)
+                {
+                    playerZone.InitializePlayerDeck();
+                }
             }
         }
     }

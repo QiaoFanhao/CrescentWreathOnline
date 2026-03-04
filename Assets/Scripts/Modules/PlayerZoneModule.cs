@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using CrescentWreath.Core;
 using CrescentWreath.Data;
@@ -6,51 +6,59 @@ using CrescentWreath.Data;
 namespace CrescentWreath.Modules
 {
     /// <summary>
-    /// 个人区域模块 (Server Logic)
-    /// 职责：管理单个玩家的牌库、手牌、弃牌堆、阵地区。
+    /// Per-player zone state (deck / hand / discard / battlefield).
+    /// Battlefield is split into:
+    /// - played cards (end-phase cleanup -> discard)
+    /// - defense cards (returned to hand at this player's next start phase)
     /// </summary>
     public class PlayerZoneModule : MonoBehaviour
     {
         public int playerId;
 
-        [Header("私有容器")]
-        [SerializeField] private List<int> _deck = new List<int>();        // 牌库 
-        [SerializeField] private List<int> _hand = new List<int>();        // 手牌
-        [SerializeField] private List<int> _discard = new List<int>();     // 弃牌堆 [cite: 166]
-        [SerializeField] private List<int> _battlefield = new List<int>(); // 阵地区 [cite: 169]
+        [Header("Private Containers")]
+        [SerializeField] private List<int> _deck = new List<int>();
+        [SerializeField] private List<int> _hand = new List<int>();
+        [SerializeField] private List<int> _discard = new List<int>();
+        [SerializeField] private List<int> _battlefieldPlayed = new List<int>();
+        [SerializeField] private List<int> _battlefieldDefense = new List<int>();
+        [SerializeField] private List<int> _battlefieldPersistent = new List<int>();
+
+        [Header("Defense Placeholder Rules")]
+        [SerializeField] private int _maxDefenseCardsPerDamage = 1;
 
         public CardDatabaseSO cardDatabase;
 
         public int HandCount => _hand.Count;
+        public int BattlefieldPlayedCount => _battlefieldPlayed.Count;
+        public int BattlefieldDefenseCount => _battlefieldDefense.Count;
+        public int BattlefieldPersistentCount => _battlefieldPersistent.Count;
+        public int MaxDefenseCardsPerDamage => _maxDefenseCardsPerDamage;
 
         private void OnEnable()
         {
-            // 只响应属于自己的请求 (未来在网络层过滤)
-            GameEvent.Request_PlayHandCard += OnRequestPlayCard;
+            // Discard requests are still event-driven for end-phase overflow handling.
             GameEvent.Request_DiscardHandCard += OnRequestDiscard;
         }
 
         private void OnDisable()
         {
-            GameEvent.Request_PlayHandCard -= OnRequestPlayCard;
             GameEvent.Request_DiscardHandCard -= OnRequestDiscard;
         }
 
-        /// <summary>
-        /// 初始化个人起始卡组 (3魔术回路 + 7购物券) [cite: 8, 57]
-        /// </summary>
         public void InitializePlayerDeck()
         {
             _deck.Clear();
             _hand.Clear();
             _discard.Clear();
-            _battlefield.Clear();
+            _battlefieldPlayed.Clear();
+            _battlefieldDefense.Clear();
+            _battlefieldPersistent.Clear();
 
             for (int i = 0; i < 3; i++) _deck.Add(21002);
             for (int i = 0; i < 7; i++) _deck.Add(21001);
 
             ShuffleDeck();
-            DrawCards(6); // 初始抽6张 [cite: 175]
+            DrawCards(6);
         }
 
         public void DrawCards(int count)
@@ -70,23 +78,33 @@ namespace CrescentWreath.Modules
             }
         }
 
+        /// <summary>
+        /// Move a hand card to battlefield and return its card data for effect execution.
+        /// TurnModule is expected to validate phase/ownership before calling.
+        /// </summary>
+        public bool TryPlayHandCard(int index, out BaseCardSO playedCard)
+        {
+            playedCard = null;
+            if (index < 0 || index >= _hand.Count) return false;
+
+            int id = _hand[index];
+            _hand.RemoveAt(index);
+            _battlefieldPlayed.Add(id);
+            BroadcastMove(id, ZoneType.Hand, ZoneType.Battlefield);
+
+            if (cardDatabase != null)
+            {
+                playedCard = cardDatabase.GetCardById(id);
+            }
+
+            return true;
+        }
+
         private void RecycleDiscard()
         {
             _deck.AddRange(_discard);
             _discard.Clear();
             ShuffleDeck();
-            // 可以通知UI播放洗牌动画
-        }
-
-        private void OnRequestPlayCard(int index)
-        {
-            // 逻辑由 TurnModule 校验权限后执行
-            if (index < 0 || index >= _hand.Count) return;
-
-            int id = _hand[index];
-            _hand.RemoveAt(index);
-            _battlefield.Add(id);
-            BroadcastMove(id, ZoneType.Hand, ZoneType.Battlefield);
         }
 
         private void OnRequestDiscard(int index)
@@ -99,14 +117,112 @@ namespace CrescentWreath.Modules
             BroadcastMove(id, ZoneType.Hand, ZoneType.Discard);
         }
 
-        public void ClearBattlefield()
+        /// <summary>
+        /// Placeholder entry for future damage-resolution integration.
+        /// Moves a hand card into the defense sub-zone on battlefield.
+        /// Does not validate damage type / defense value yet.
+        /// </summary>
+        public bool TryCommitDefenseCardFromHand(int index, out BaseCardSO defenseCard)
         {
-            foreach (var id in _battlefield)
+            defenseCard = null;
+
+            if (index < 0 || index >= _hand.Count) return false;
+
+            // Placeholder rule: per-damage declaration count should be enforced by damage-resolution module.
+            // We keep the cap here only as a configurable reference and do not enforce it globally yet.
+            int id = _hand[index];
+            _hand.RemoveAt(index);
+            _battlefieldDefense.Add(id);
+            BroadcastMove(id, ZoneType.Hand, ZoneType.Battlefield);
+
+            if (cardDatabase != null)
+            {
+                defenseCard = cardDatabase.GetCardById(id);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Rule: at this player's next start phase, defense cards in battlefield return to hand.
+        /// </summary>
+        public int ReturnDefenseCardsToHand()
+        {
+            if (_battlefieldDefense.Count == 0) return 0;
+
+            int count = _battlefieldDefense.Count;
+            foreach (var id in _battlefieldDefense)
+            {
+                _hand.Add(id);
+                BroadcastMove(id, ZoneType.Battlefield, ZoneType.Hand);
+            }
+            _battlefieldDefense.Clear();
+            return count;
+        }
+
+        /// <summary>
+        /// Rule: end phase cleanup discards only played cards in battlefield.
+        /// </summary>
+        public int ClearPlayedCardsToDiscard()
+        {
+            int count = _battlefieldPlayed.Count;
+            foreach (var id in _battlefieldPlayed)
             {
                 _discard.Add(id);
                 BroadcastMove(id, ZoneType.Battlefield, ZoneType.Discard);
             }
-            _battlefield.Clear();
+            _battlefieldPlayed.Clear();
+            return count;
+        }
+
+        /// <summary>
+        /// Placeholder API for special cards that remain in battlefield as persistent effects.
+        /// Moves the newest matching card from played/defense sub-zone into the persistent sub-zone.
+        /// </summary>
+        public bool TryMoveBattlefieldCardToPersistent(int cardId)
+        {
+            if (cardId == 0) return false;
+
+            for (int i = _battlefieldPlayed.Count - 1; i >= 0; i--)
+            {
+                if (_battlefieldPlayed[i] != cardId) continue;
+                _battlefieldPersistent.Add(_battlefieldPlayed[i]);
+                _battlefieldPlayed.RemoveAt(i);
+                return true;
+            }
+
+            for (int i = _battlefieldDefense.Count - 1; i >= 0; i--)
+            {
+                if (_battlefieldDefense[i] != cardId) continue;
+                _battlefieldPersistent.Add(_battlefieldDefense[i]);
+                _battlefieldDefense.RemoveAt(i);
+                return true;
+            }
+
+            return false;
+        }
+
+        public List<BaseCardSO> GetBattlefieldPlayedSnapshot()
+        {
+            return BuildCardSnapshot(_battlefieldPlayed);
+        }
+
+        public List<BaseCardSO> GetBattlefieldDefenseSnapshot()
+        {
+            return BuildCardSnapshot(_battlefieldDefense);
+        }
+
+        public List<BaseCardSO> GetBattlefieldPersistentSnapshot()
+        {
+            return BuildCardSnapshot(_battlefieldPersistent);
+        }
+
+        /// <summary>
+        /// Compatibility wrapper. Intentionally clears only played cards (not defense cards).
+        /// </summary>
+        public void ClearBattlefield()
+        {
+            ClearPlayedCardsToDiscard();
         }
 
         private void ShuffleDeck()
@@ -122,34 +238,39 @@ namespace CrescentWreath.Modules
 
         private void BroadcastMove(int cardId, ZoneType from, ZoneType to)
         {
-            // 【核心逻辑】数据隔离
-            // 只有在以下情况才发送真实的卡牌数据：
-            // 1. 这张牌属于本地玩家 (playerId == 0)
-            // 2. 这张牌进入了公开区域 (如 Battlefield 或 SummonZone)
-
             bool isLocalPlayer = (playerId == 0);
             bool isPublicZone = (to == ZoneType.Battlefield || to == ZoneType.SummonZone || to == ZoneType.Discard);
 
             BaseCardSO cardData = null;
-
             if (isLocalPlayer || isPublicZone)
             {
-                cardData = cardDatabase.GetCardById(cardId);
-            }
-            else
-            {
-                // 对手的手牌，我们只传一个空数据，View 层据此生成“卡背”
-                cardData = null;
+                cardData = cardDatabase != null ? cardDatabase.GetCardById(cardId) : null;
             }
 
             GameEvent.OnCardMoved?.Invoke(cardData, from, to, playerId, -1);
-        }/*  */
+        }
 
-        public int GetDeckCount(int playerId)
+        public int GetDeckCount(int ignoredPlayerId)
         {
-            // 这里返回该玩家实际的牌库数量
-            // return playerDecks[playerId].Count; 
-            return 40; // 暂时写死测试，你需替换为真实逻辑
+            // TODO: return actual deck count for the requested player when multi-player data is centralized.
+            return 40;
+        }
+
+        private List<BaseCardSO> BuildCardSnapshot(List<int> ids)
+        {
+            var result = new List<BaseCardSO>(ids.Count);
+            if (ids.Count == 0) return result;
+
+            for (int i = 0; i < ids.Count; i++)
+            {
+                BaseCardSO data = cardDatabase != null ? cardDatabase.GetCardById(ids[i]) : null;
+                if (data != null)
+                {
+                    result.Add(data);
+                }
+            }
+
+            return result;
         }
     }
 }
